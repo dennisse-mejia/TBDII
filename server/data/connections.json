@@ -18,5 +18,15 @@
     "password": "Strong!Passw0rd",
     "database": "db_manager_demo",
     "createdAt": "2026-02-09T04:41:10.876Z"
+  },
+  {
+    "id": "dafcf749-4d72-43b5-9cf3-7743dfdbb573",
+    "name": "Otra DB",
+    "host": "localhost",
+    "port": 1433,
+    "user": "sa",
+    "password": "Strong!Passw0rd",
+    "database": "db_manager_demo",
+    "createdAt": "2026-02-09T17:16:21.615Z"
   }
 ]
