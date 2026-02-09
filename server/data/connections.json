@@ -8,5 +8,15 @@
     "password": "Strong!Passw0rd",
     "database": "master",
     "createdAt": "2026-02-09T03:31:59.004Z"
+  },
+  {
+    "id": "4444cc53-dbec-4d3b-be15-b85b4b464e1c",
+    "name": "Demo DB",
+    "host": "localhost",
+    "port": 1433,
+    "user": "sa",
+    "password": "Strong!Passw0rd",
+    "database": "db_manager_demo",
+    "createdAt": "2026-02-09T04:41:10.876Z"
   }
 ]
