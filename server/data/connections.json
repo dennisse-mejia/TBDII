@@ -1,0 +1,12 @@
+[
+  {
+    "id": "a2d8203e-aa63-4b12-b90a-2f50494866fa",
+    "name": "Local Docker",
+    "host": "localhost",
+    "port": 1433,
+    "user": "sa",
+    "password": "Strong!Passw0rd",
+    "database": "master",
+    "createdAt": "2026-02-09T03:31:59.004Z"
+  }
+]
