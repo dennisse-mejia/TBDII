@@ -178,6 +178,89 @@ app.get("/db/objects", async (req, res) => {
   }
 });
 
+// definición SQL
+app.get("/db/object/definition", async (req, res) => {
+  const connectionId = String(req.query.connectionId || "").trim();
+  const schema = String(req.query.schema || "").trim();
+  const name = String(req.query.name || "").trim();
+
+  if (!connectionId) {
+    return res.status(400).json({ ok: false, error: "Falta connectionId" });
+  }
+  if (!schema || !name) {
+    return res.status(400).json({ ok: false, error: "Falta schema o name" });
+  }
+
+  const conns = readConnections();
+  const conn = conns.find((c) => c.id === connectionId);
+
+  if (!conn) {
+    return res.status(404).json({ ok: false, error: "Conexión no encontrada" });
+  }
+
+  const cfg = {
+    user: conn.user,
+    password: conn.password,
+    server: conn.host,
+    port: Number(conn.port || 1433),
+    database: conn.database || "master",
+    options: { encrypt: false, trustServerCertificate: true },
+  };
+
+  let pool;
+  try {
+    pool = await sql.connect(cfg);
+
+    const defQ = await pool
+      .request()
+      .input("schema", sql.NVarChar, schema)
+      .input("name", sql.NVarChar, name)
+      .query(`
+        SELECT
+          s.name AS schema_name,
+          o.name AS object_name,
+          o.type AS object_type,
+          o.type_desc AS object_type_desc,
+          m.definition
+        FROM sys.objects o
+        INNER JOIN sys.schemas s
+          ON s.schema_id = o.schema_id
+        LEFT JOIN sys.sql_modules m
+          ON m.object_id = o.object_id
+        WHERE o.is_ms_shipped = 0
+          AND s.name = @schema
+          AND o.name = @name
+          AND o.type IN ('V','P','FN','IF','TF','TR')
+        ORDER BY o.name;
+      `);
+
+    const row = defQ.recordset?.[0];
+    if (!row) {
+      return res.status(404).json({ ok: false, error: "Objeto no encontrado" });
+    }
+
+    // Si objeto WITH ENCRYPTION puede venir NULL
+    return res.json({
+      ok: true,
+      object: {
+        schema: row.schema_name,
+        name: row.object_name,
+        type: row.object_type,
+        typeDesc: row.object_type_desc,
+      },
+      definition: row.definition ?? "",
+      hasDefinition: row.definition != null,
+    });
+  } catch (err) {
+    return res.status(400).json({ ok: false, error: err.message });
+  } finally {
+    try {
+      if (pool) await pool.close();
+    } catch {}
+  }
+});
+
+
 // Detalle de tabla
 app.get("/db/table/details", async (req, res) => {
   const connectionId = String(req.query.connectionId || "").trim();
