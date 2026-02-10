@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import "./App.css";
+import { getTableDetails } from "./api/db";
+import TableDetailsPanel from "./components/TableDetailsPanel";
+
 
 const API = "http://localhost:3001";
 
@@ -47,6 +50,33 @@ function mostrarObjeto(o) {
   return `${schema}.${name}`;
 }
 
+
+function extraerSchemaNombre(o) {
+  if (typeof o === "string") {
+    const [schema, ...rest] = o.split(".");
+    return { schema: schema || "dbo", name: rest.join(".") || o };
+  }
+
+  const schema =
+    o.schema ??
+    o.table_schema ??
+    o.view_schema ??
+    o.routine_schema ??
+    o.trigger_schema ??
+    "dbo";
+
+  const name =
+    o.name ??
+    o.table_name ??
+    o.view_name ??
+    o.routine_name ??
+    o.trigger_name ??
+    "obj";
+
+  return { schema, name };
+}
+
+
 export default function App() {
   const [form, setForm] = useState({
     name: "Local Docker",
@@ -83,6 +113,13 @@ export default function App() {
     functions: false,
     triggers: false,
   }));
+
+  // Detalle de tabla (panel derecho)
+const [selectedTable, setSelectedTable] = useState(null); 
+const [tableDetails, setTableDetails] = useState(null);
+const [loadingTableDetails, setLoadingTableDetails] = useState(false);
+const [tableDetailsError, setTableDetailsError] = useState("");
+
 
   // Mapea opciones del dropdown
   const connectionOptions = useMemo(() => {
@@ -168,6 +205,45 @@ export default function App() {
     if (!selectedId) return;
     loadObjects(selectedId);
   }, [selectedId]);
+  
+  // trae detalle cuando cambia la tabla
+useEffect(() => {
+  if (!selectedId || !selectedTable) {
+    setTableDetails(null);
+    setTableDetailsError("");
+    setLoadingTableDetails(false);
+    return;
+  }
+
+  const controller = new AbortController();
+
+  (async () => {
+    try {
+      setLoadingTableDetails(true);
+      setTableDetailsError("");
+
+      const data = await getTableDetails(
+        {
+          connectionId: selectedId,
+          schema: selectedTable.schema,
+          name: selectedTable.name,
+        },
+        { signal: controller.signal }
+      );
+
+      setTableDetails(data);
+    } catch (e) {
+      if (e?.name === "AbortError") return;
+      setTableDetails(null);
+      setTableDetailsError(e?.message || "Error cargando detalle");
+    } finally {
+      setLoadingTableDetails(false);
+    }
+  })();
+
+  return () => controller.abort();
+}, [selectedId, selectedTable]);
+
 
   const onSelectChange = (e) => {
     const id = e.target.value;
@@ -262,6 +338,19 @@ export default function App() {
     setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
+  const clearSelectedTable = () => {
+  setSelectedTable(null);
+  setTableDetails(null);
+  setTableDetailsError("");
+  setLoadingTableDetails(false);
+};
+
+const onTableClick = (obj) => {
+  const { schema, name } = extraerSchemaNombre(obj);
+  setSelectedTable({ schema, name });
+};
+
+
   return (
     <div className="appShell">
       {/* Sidebar: selección */}
@@ -306,62 +395,80 @@ export default function App() {
           </button>
         </div>
 
-        <div className="list">
-          {SECCIONES.map((s) => {
-            const list = objects[s.key] ?? [];
-            const open = !!expanded[s.key];
+       <div className="list">
+  {SECCIONES.map((s) => {
+    const list = objects[s.key] ?? [];
+    const open = !!expanded[s.key];
 
-            return (
-              <div key={s.key} style={{ display: "grid", gap: 6 }}>
+    return (
+      <div key={s.key} style={{ display: "grid", gap: 6 }}>
+        <div
+          className="item"
+          onClick={() => toggle(s.key)}
+          style={{ cursor: "pointer" }}
+          title="Abrir/cerrar"
+        >
+          <span style={{ opacity: 0.8 }}>{open ? "▾" : "▸"}</span>
+          <span style={{ fontWeight: 700 }}>{s.label}</span>
+          <span style={{ marginLeft: "auto", opacity: 0.7 }}>
+            {list.length}
+          </span>
+        </div>
+
+        {open ? (
+          list.length === 0 ? (
+            <div className="item itemMuted" style={{ paddingLeft: 22 }}>
+              — vacío —
+            </div>
+          ) : (
+            list.slice(0, 200).map((obj, idx) => {
+              const isTable = s.key === "tables";
+              const { schema, name } = extraerSchemaNombre(obj);
+
+              const isSelected =
+                isTable &&
+                selectedTable &&
+                selectedTable.schema === schema &&
+                selectedTable.name === name;
+
+              return (
                 <div
-                  className="item"
-                  onClick={() => toggle(s.key)}
-                  style={{ cursor: "pointer" }}
-                  title="Abrir/cerrar"
+                  key={`${s.key}-${idx}-${mostrarObjeto(obj)}`}
+                  className="item itemMuted"
+                  onClick={() => (isTable ? onTableClick(obj) : null)}
+                  style={{
+                    paddingLeft: 22,
+                    border: isSelected
+                      ? "1px solid rgba(59,130,246,0.7)"
+                      : "1px solid rgba(255,255,255,0.06)",
+                    background: isSelected
+                      ? "rgba(59,130,246,0.10)"
+                      : "rgba(255,255,255,0.02)",
+                    cursor: isTable ? "pointer" : "default",
+                  }}
+                  title={mostrarObjeto(obj)}
                 >
-                  <span style={{ opacity: 0.8 }}>{open ? "▾" : "▸"}</span>
-                  <span style={{ fontWeight: 700 }}>{s.label}</span>
-                  <span style={{ marginLeft: "auto", opacity: 0.7 }}>
-                    {list.length}
+                  <span style={{ opacity: 0.7 }}>•</span>
+                  <span
+                    style={{
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {mostrarObjeto(obj)}
                   </span>
                 </div>
+              );
+            })
+          )
+        ) : null}
+      </div>
+    );
+  })}
+</div>
+</aside>
 
-                {open ? (
-                  list.length === 0 ? (
-                    <div className="item itemMuted" style={{ paddingLeft: 22 }}>
-                      — vacío —
-                    </div>
-                  ) : (
-                    list.slice(0, 200).map((obj, idx) => (
-                      <div
-                        key={`${s.key}-${idx}-${mostrarObjeto(obj)}`}
-                        className="item itemMuted"
-                        style={{
-                          paddingLeft: 22,
-                          border: "1px solid rgba(255,255,255,0.06)",
-                          background: "rgba(255,255,255,0.02)",
-                        }}
-                        title={mostrarObjeto(obj)}
-                      >
-                        <span style={{ opacity: 0.7 }}>•</span>
-                        <span
-                          style={{
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {mostrarObjeto(obj)}
-                        </span>
-                      </div>
-                    ))
-                  )
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-      </aside>
 
       {/* Main */}
       <div className="main">
@@ -371,6 +478,14 @@ export default function App() {
         </header>
 
         <div className="content">
+          <TableDetailsPanel
+  selected={selectedTable}
+  details={tableDetails}
+  loading={loadingTableDetails}
+  error={tableDetailsError}
+  onClear={clearSelectedTable}
+/>
+
           <h1 style={{ marginTop: 0 }}>Connection Manager (MSSQL)</h1>
 
           <div style={{ display: "grid", gap: 10, gridTemplateColumns: "1fr 1fr" }}>

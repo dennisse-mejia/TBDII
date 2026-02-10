@@ -1,0 +1,155 @@
+import React from "react";
+
+function bool(v) {
+  return v === true || v === 1 || v === "1";
+}
+
+function Badge({ children, title }) {
+  return (
+    <span
+      title={title}
+      style={{
+        fontSize: 12,
+        fontWeight: 800,
+        padding: "2px 8px",
+        borderRadius: 999,
+        border: "1px solid rgba(255,255,255,0.16)",
+        background: "rgba(255,255,255,0.06)",
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+export default function TableDetailsPanel({
+  selected,
+  details,
+  loading,
+  error,
+  onClear,
+}) {
+  return (
+    <section
+      style={{
+        border: "1px solid rgba(255,255,255,0.12)",
+        background: "rgba(255,255,255,0.03)",
+        borderRadius: 12,
+        padding: 14,
+        marginBottom: 18,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <h2 style={{ margin: 0 }}>Detalle</h2>
+
+        <div
+          style={{
+            marginLeft: "auto",
+            display: "flex",
+            gap: 8,
+            alignItems: "center",
+          }}
+        >
+          {selected ? (
+            <span style={{ opacity: 0.8, fontWeight: 800 }}>
+              {selected.schema}.{selected.name}
+            </span>
+          ) : (
+            <span style={{ opacity: 0.6 }}>— selecciona una tabla —</span>
+          )}
+
+          {selected ? (
+            <button onClick={onClear} style={{ padding: "8px 10px", fontWeight: 800 }}>
+              Limpiar
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      {loading ? (
+        <p style={{ marginTop: 10, opacity: 0.8 }}>Cargando detalle...</p>
+      ) : error ? (
+        <p style={{ marginTop: 10, color: "tomato", fontWeight: 800 }}>{error}</p>
+      ) : !selected ? null : !details ? (
+        <p style={{ marginTop: 10, opacity: 0.8 }}>Sin datos aún.</p>
+      ) : (
+        <div style={{ marginTop: 12, display: "grid", gap: 12 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <Badge title="Primary Key">PK: {details.primaryKey?.name ?? "—"}</Badge>
+            {(details.primaryKey?.columns ?? []).length ? (
+              <span style={{ opacity: 0.8, fontSize: 13 }}>
+                ({details.primaryKey.columns.map((c) => c.name).join(", ")})
+              </span>
+            ) : (
+              <span style={{ opacity: 0.6, fontSize: 13 }}>(sin columnas PK)</span>
+            )}
+          </div>
+
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr style={{ textAlign: "left", opacity: 0.85 }}>
+                  <th style={{ padding: "8px 6px" }}>Columna</th>
+                  <th style={{ padding: "8px 6px" }}>Tipo</th>
+                  <th style={{ padding: "8px 6px" }}>Null</th>
+                  <th style={{ padding: "8px 6px" }}>Identity</th>
+                  <th style={{ padding: "8px 6px" }}>PK</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {(details.columns ?? []).map((c) => {
+                  const isPk = bool(c.is_pk);
+                  const isId = bool(c.is_identity);
+                  const isNull = bool(c.is_nullable);
+
+                  const typeExtra =
+                    c.type_name === "nvarchar" ||
+                    c.type_name === "varchar" ||
+                    c.type_name === "char" ||
+                    c.type_name === "nchar"
+                      ? `(${c.max_length})`
+                      : c.type_name === "decimal" || c.type_name === "numeric"
+                      ? `(${c.precision},${c.scale})`
+                      : "";
+
+                  return (
+                    <tr
+                      key={c.column_id ?? c.column_name}
+                      style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}
+                    >
+                      <td style={{ padding: "8px 6px", fontWeight: 800 }}>
+                        {c.column_name}
+                      </td>
+
+                      <td style={{ padding: "8px 6px", opacity: 0.9 }}>
+                        {c.type_name}
+                        {typeExtra}
+                      </td>
+
+                      <td style={{ padding: "8px 6px" }}>{isNull ? "Sí" : "No"}</td>
+
+                      <td style={{ padding: "8px 6px" }}>
+                        {isId ? (
+                          <Badge title={`seed=${c.seed_value} inc=${c.increment_value}`}>
+                            Sí
+                          </Badge>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+
+                      <td style={{ padding: "8px 6px" }}>
+                        {isPk ? <Badge title={`orden ${c.pk_ordinal ?? ""}`}>Sí</Badge> : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
