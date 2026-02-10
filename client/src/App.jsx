@@ -3,6 +3,50 @@ import "./App.css";
 
 const API = "http://localhost:3001";
 
+const SECCIONES = [
+  { key: "tables", label: "Tables" },
+  { key: "views", label: "Views" },
+  { key: "procedures", label: "Procedures" },
+  { key: "functions", label: "Functions" },
+  { key: "triggers", label: "Triggers" },
+];
+
+// normaliza forma del backend
+function normalizarObjetos(payload) {
+  const p = payload ?? {};
+  const arr = (v) => (Array.isArray(v) ? v : []);
+  return {
+    tables: arr(p.tables ?? p.tablas),
+    views: arr(p.views ?? p.vistas),
+    procedures: arr(p.procedures ?? p.procs ?? p.procedimientos),
+    functions: arr(p.functions ?? p.funcs ?? p.funciones),
+    triggers: arr(p.triggers ?? p.trigs ?? p.disparadores),
+  };
+}
+
+// muestra schema.nombre
+function mostrarObjeto(o) {
+  if (typeof o === "string") return o;
+
+  const schema =
+    o.schema ??
+    o.table_schema ??
+    o.view_schema ??
+    o.routine_schema ??
+    o.trigger_schema ??
+    "dbo";
+
+  const name =
+    o.name ??
+    o.table_name ??
+    o.view_name ??
+    o.routine_name ??
+    o.trigger_name ??
+    "obj";
+
+  return `${schema}.${name}`;
+}
+
 export default function App() {
   const [form, setForm] = useState({
     name: "Local Docker",
@@ -15,10 +59,30 @@ export default function App() {
 
   const [connections, setConnections] = useState([]);
   // conexión activa
-  const [selectedId, setSelectedId] = useState(""); 
+  const [selectedId, setSelectedId] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadingConnections, setLoadingConnections] = useState(false);
   const [msg, setMsg] = useState(null);
+
+  // explorer
+  const [objects, setObjects] = useState(() =>
+    normalizarObjetos({
+      tables: [],
+      views: [],
+      procedures: [],
+      functions: [],
+      triggers: [],
+    })
+  );
+  const [loadingObjects, setLoadingObjects] = useState(false);
+  const [objectsError, setObjectsError] = useState("");
+  const [expanded, setExpanded] = useState(() => ({
+    tables: true,
+    views: true,
+    procedures: false,
+    functions: false,
+    triggers: false,
+  }));
 
   // Mapea opciones del dropdown
   const connectionOptions = useMemo(() => {
@@ -61,9 +125,49 @@ export default function App() {
     }
   };
 
+  // carga objetos por conexión
+  const loadObjects = async (connectionId) => {
+    if (!connectionId) return;
+
+    setLoadingObjects(true);
+    setObjectsError("");
+    try {
+      const res = await fetch(
+        `${API}/db/objects?connectionId=${encodeURIComponent(connectionId)}`
+      );
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(`No se pudo cargar objetos (${res.status}) ${text}`);
+      }
+
+      const data = await res.json();
+      setObjects(normalizarObjetos(data));
+    } catch (err) {
+      setObjectsError(err.message || "Error al cargar objetos");
+      setObjects(
+        normalizarObjetos({
+          tables: [],
+          views: [],
+          procedures: [],
+          functions: [],
+          triggers: [],
+        })
+      );
+    } finally {
+      setLoadingObjects(false);
+    }
+  };
+
   useEffect(() => {
     loadConnections();
   }, []);
+
+  // refresca explorer cuando cambia conexión
+  useEffect(() => {
+    if (!selectedId) return;
+    loadObjects(selectedId);
+  }, [selectedId]);
 
   const onSelectChange = (e) => {
     const id = e.target.value;
@@ -154,6 +258,10 @@ export default function App() {
     }
   };
 
+  const toggle = (key) => {
+    setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
   return (
     <div className="appShell">
       {/* Sidebar: selección */}
@@ -178,15 +286,80 @@ export default function App() {
         </select>
 
         <div className="sectionTitle" style={{ marginTop: 14 }}>
-          Explorer
+          Explorer {loadingObjects ? "(cargando...)" : ""}
+        </div>
+
+        {objectsError ? (
+          <div style={{ color: "tomato", fontSize: 13, marginBottom: 10 }}>
+            {objectsError}
+          </div>
+        ) : null}
+
+        <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+          <button
+            onClick={() => loadObjects(selectedId)}
+            disabled={!selectedId || loadingObjects}
+            style={{ padding: 10, fontWeight: 700 }}
+            title="Recargar"
+          >
+            {loadingObjects ? "..." : "Refrescar"}
+          </button>
         </div>
 
         <div className="list">
-          <div className="item itemMuted">Tables</div>
-          <div className="item itemMuted">Views</div>
-          <div className="item itemMuted">Procedures</div>
-          <div className="item itemMuted">Functions</div>
-          <div className="item itemMuted">Triggers</div>
+          {SECCIONES.map((s) => {
+            const list = objects[s.key] ?? [];
+            const open = !!expanded[s.key];
+
+            return (
+              <div key={s.key} style={{ display: "grid", gap: 6 }}>
+                <div
+                  className="item"
+                  onClick={() => toggle(s.key)}
+                  style={{ cursor: "pointer" }}
+                  title="Abrir/cerrar"
+                >
+                  <span style={{ opacity: 0.8 }}>{open ? "▾" : "▸"}</span>
+                  <span style={{ fontWeight: 700 }}>{s.label}</span>
+                  <span style={{ marginLeft: "auto", opacity: 0.7 }}>
+                    {list.length}
+                  </span>
+                </div>
+
+                {open ? (
+                  list.length === 0 ? (
+                    <div className="item itemMuted" style={{ paddingLeft: 22 }}>
+                      — vacío —
+                    </div>
+                  ) : (
+                    list.slice(0, 200).map((obj, idx) => (
+                      <div
+                        key={`${s.key}-${idx}-${mostrarObjeto(obj)}`}
+                        className="item itemMuted"
+                        style={{
+                          paddingLeft: 22,
+                          border: "1px solid rgba(255,255,255,0.06)",
+                          background: "rgba(255,255,255,0.02)",
+                        }}
+                        title={mostrarObjeto(obj)}
+                      >
+                        <span style={{ opacity: 0.7 }}>•</span>
+                        <span
+                          style={{
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {mostrarObjeto(obj)}
+                        </span>
+                      </div>
+                    ))
+                  )
+                ) : null}
+              </div>
+            );
+          })}
         </div>
       </aside>
 
@@ -270,7 +443,7 @@ export default function App() {
                   <button
                     key={c.id}
                     // click selecciona
-                    onClick={() => selectConnection(c)} 
+                    onClick={() => selectConnection(c)}
                     style={{
                       textAlign: "left",
                       border: isSelected ? "1px solid rgba(59,130,246,0.7)" : "1px solid rgba(255,255,255,0.12)",
@@ -294,7 +467,7 @@ export default function App() {
                     <button
                       onClick={(e) => {
                         // no seleccionar al eliminar
-                        e.stopPropagation(); 
+                        e.stopPropagation();
                         deleteConnection(c.id);
                       }}
                       disabled={loading}
