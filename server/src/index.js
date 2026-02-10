@@ -178,6 +178,154 @@ app.get("/db/objects", async (req, res) => {
   }
 });
 
+// Detalle de tabla
+app.get("/db/table/details", async (req, res) => {
+  const connectionId = String(req.query.connectionId || "").trim();
+  const schema = String(req.query.schema || "").trim();
+  const name = String(req.query.name || "").trim();
+
+  if (!connectionId) {
+    return res.status(400).json({ ok: false, error: "Falta connectionId" });
+  }
+  if (!schema || !name) {
+    return res.status(400).json({ ok: false, error: "Falta schema o name" });
+  }
+
+  const conns = readConnections();
+  const conn = conns.find((c) => c.id === connectionId);
+
+  if (!conn) {
+    return res.status(404).json({ ok: false, error: "Conexión no encontrada" });
+  }
+
+  const cfg = {
+    user: conn.user,
+    password: conn.password,
+    server: conn.host,
+    port: Number(conn.port || 1433),
+    database: conn.database || "master",
+    options: { encrypt: false, trustServerCertificate: true },
+  };
+
+  let pool;
+  try {
+    pool = await sql.connect(cfg);
+
+    // validar tabla y obtener object_id
+    const objQ = await pool
+      .request()
+      .input("schema", sql.NVarChar, schema)
+      .input("name", sql.NVarChar, name)
+      .query(`
+        SELECT t.object_id
+        FROM sys.tables t
+        INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
+        WHERE t.is_ms_shipped = 0
+          AND s.name = @schema
+          AND t.name = @name;
+      `);
+
+    const objId = objQ.recordset?.[0]?.object_id;
+    if (!objId) {
+      return res.status(404).json({ ok: false, error: "Tabla no encontrada" });
+    }
+
+    // PK (nombre + columnas)
+    const pkQ = await pool
+      .request()
+      .input("objId", sql.Int, objId)
+      .query(`
+        SELECT
+          kc.name AS pk_name,
+          col.name AS column_name,
+          ic.key_ordinal
+        FROM sys.key_constraints kc
+        INNER JOIN sys.indexes i
+          ON i.object_id = kc.parent_object_id
+         AND i.index_id = kc.unique_index_id
+        INNER JOIN sys.index_columns ic
+          ON ic.object_id = i.object_id
+         AND ic.index_id = i.index_id
+        INNER JOIN sys.columns col
+          ON col.object_id = ic.object_id
+         AND col.column_id = ic.column_id
+        WHERE kc.type = 'PK'
+          AND kc.parent_object_id = @objId
+        ORDER BY ic.key_ordinal;
+      `);
+
+    const pkName = pkQ.recordset?.[0]?.pk_name || null;
+    const pkColumns = (pkQ.recordset || []).map((r) => ({
+      name: r.column_name,
+      ordinal: r.key_ordinal,
+    }));
+
+    // columnas + tipo + identity + marca de PK
+    const colsQ = await pool
+      .request()
+      .input("objId", sql.Int, objId)
+      .query(`
+        WITH pk_cols AS (
+          SELECT ic.column_id, ic.key_ordinal
+          FROM sys.key_constraints kc
+          INNER JOIN sys.indexes i
+            ON i.object_id = kc.parent_object_id
+           AND i.index_id = kc.unique_index_id
+          INNER JOIN sys.index_columns ic
+            ON ic.object_id = i.object_id
+           AND ic.index_id = i.index_id
+          WHERE kc.type = 'PK'
+            AND kc.parent_object_id = @objId
+        )
+        SELECT
+          c.column_id,
+          c.name AS column_name,
+          t.name AS type_name,
+          CASE
+            WHEN t.name IN ('nchar','nvarchar') AND c.max_length > 0 THEN c.max_length / 2
+            ELSE c.max_length
+          END AS max_length,
+          c.precision,
+          c.scale,
+          c.is_nullable,
+          CASE WHEN idc.column_id IS NULL THEN 0 ELSE 1 END AS is_identity,
+          idc.seed_value,
+          idc.increment_value,
+          CASE WHEN pk.column_id IS NULL THEN 0 ELSE 1 END AS is_pk,
+          pk.key_ordinal AS pk_ordinal
+        FROM sys.columns c
+        INNER JOIN sys.types t
+          ON t.user_type_id = c.user_type_id
+        LEFT JOIN sys.identity_columns idc
+          ON idc.object_id = c.object_id
+         AND idc.column_id = c.column_id
+        LEFT JOIN pk_cols pk
+          ON pk.column_id = c.column_id
+        WHERE c.object_id = @objId
+        ORDER BY c.column_id;
+      `);
+
+    return res.json({
+      ok: true,
+      table: { schema, name },
+      primaryKey: {
+        name: pkName,
+        columns: pkColumns,
+      },
+      columns: colsQ.recordset,
+    });
+  } catch (err) {
+    return res.status(400).json({ ok: false, error: err.message });
+  } finally {
+    try {
+      if (pool) await pool.close();
+    } catch {
+
+    }
+  }
+});
+
+
 // Ejecutar SQL 
 app.post("/db/exec", async (req, res) => {
   const { connectionId, sqlText } = req.body;
