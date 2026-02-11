@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import "./App.css";
 import { getTableDetails, getObjectDefinition } from "./api/db";
 import TableDetailsPanel from "./components/TableDetailsPanel";
+import ObjectDefinitionPanel from "./components/ObjectDefinitionPanel";
 
 
 const API = "http://localhost:3001";
@@ -32,6 +33,7 @@ function mostrarObjeto(o) {
   if (typeof o === "string") return o;
 
   const schema =
+    o.schema_name ??        
     o.schema ??
     o.table_schema ??
     o.view_schema ??
@@ -40,6 +42,7 @@ function mostrarObjeto(o) {
     "dbo";
 
   const name =
+    o.object_name ??        
     o.name ??
     o.table_name ??
     o.view_name ??
@@ -50,7 +53,6 @@ function mostrarObjeto(o) {
   return `${schema}.${name}`;
 }
 
-
 function extraerSchemaNombre(o) {
   if (typeof o === "string") {
     const [schema, ...rest] = o.split(".");
@@ -58,6 +60,7 @@ function extraerSchemaNombre(o) {
   }
 
   const schema =
+    o.schema_name ??
     o.schema ??
     o.table_schema ??
     o.view_schema ??
@@ -66,6 +69,7 @@ function extraerSchemaNombre(o) {
     "dbo";
 
   const name =
+    o.object_name ??
     o.name ??
     o.table_name ??
     o.view_name ??
@@ -75,6 +79,7 @@ function extraerSchemaNombre(o) {
 
   return { schema, name };
 }
+
 
 
 export default function App() {
@@ -223,7 +228,35 @@ useEffect(() => {
     return;
   }
 
-  // trae definicion objeto cambia 
+  const controller = new AbortController();
+
+  (async () => {
+    try {
+      setLoadingTableDetails(true);
+      setTableDetailsError("");
+
+      const data = await getTableDetails(
+        {
+          connectionId: selectedId,
+          schema: selectedTable.schema,
+          name: selectedTable.name,
+        },
+        { signal: controller.signal }
+      );
+
+      setTableDetails(data);
+    } catch (e) {
+      if (e?.name === "AbortError") return;
+      setTableDetails(null);
+      setTableDetailsError(e?.message || "Error cargando detalle");
+    } finally {
+      setLoadingTableDetails(false);
+    }
+  })();
+
+  return () => controller.abort();
+}, [selectedId, selectedTable]);
+
 useEffect(() => {
   if (!selectedId || !selectedObj) {
     setObjDef(null);
@@ -261,37 +294,6 @@ useEffect(() => {
   return () => controller.abort();
 }, [selectedId, selectedObj]);
 
-
-
-
-  const controller = new AbortController();
-
-  (async () => {
-    try {
-      setLoadingTableDetails(true);
-      setTableDetailsError("");
-
-      const data = await getTableDetails(
-        {
-          connectionId: selectedId,
-          schema: selectedTable.schema,
-          name: selectedTable.name,
-        },
-        { signal: controller.signal }
-      );
-
-      setTableDetails(data);
-    } catch (e) {
-      if (e?.name === "AbortError") return;
-      setTableDetails(null);
-      setTableDetailsError(e?.message || "Error cargando detalle");
-    } finally {
-      setLoadingTableDetails(false);
-    }
-  })();
-
-  return () => controller.abort();
-}, [selectedId, selectedTable]);
 
 
   const onSelectChange = (e) => {
@@ -392,36 +394,40 @@ useEffect(() => {
   setTableDetails(null);
   setTableDetailsError("");
   setLoadingTableDetails(false);
+};
 
-  const clearSelectedObj = () => {
+const clearSelectedObj = () => {
   setSelectedObj(null);
   setObjDef(null);
   setObjDefError("");
   setLoadingObjDef(false);
 };
 
+const onObjectClick = (sectionKey, obj) => {
+  const { schema, name } = extraerSchemaNombre(obj);
+
+  if (sectionKey === "tables") {
+    setSelectedTable({ schema, name });
+    return;
+  }
+
+  // Si NO es tabla, selecciona objeto para DDL
+  setSelectedObj({ schema, name, kind: sectionKey });
 };
 
-const onTableClick = (obj) => {
-  const { schema, name } = extraerSchemaNombre(obj);
-  setSelectedTable({ schema, name });
-};
 
 const onExplorerItemClick = (sectionKey, obj) => {
   const { schema, name } = extraerSchemaNombre(obj);
 
   if (sectionKey === "tables") {
-    // Selecciona tabla
     clearSelectedObj();
     setSelectedTable({ schema, name });
     return;
   }
 
-  // Selecciona objeto DDL
-  clearSelectedTable(); 
+  clearSelectedTable();
   setSelectedObj({ schema, name, kind: sectionKey });
 };
-
 
 
   return (
@@ -509,34 +515,35 @@ const onExplorerItemClick = (sectionKey, obj) => {
 
 
               return (
-                <div
-                  key={`${s.key}-${idx}-${mostrarObjeto(obj)}`}
-                  className="item itemMuted"
-                  onClick={() => onExplorerItemClick(s.key, obj)}
-                  style={{
-                    paddingLeft: 22,
-                    border: isSelected
-                      ? "1px solid rgba(59,130,246,0.7)"
-                      : "1px solid rgba(255,255,255,0.06)",
-                    background: isSelected
-                      ? "rgba(59,130,246,0.10)"
-                      : "rgba(255,255,255,0.02)",
-                    cursor: "pointer",
-                  }}
-                  title={mostrarObjeto(obj)}
-                >
-                  <span style={{ opacity: 0.7 }}>•</span>
-                  <span
-                    style={{
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {mostrarObjeto(obj)}
-                  </span>
-                </div>
-              );
+  <div
+    key={`${s.key}-${idx}-${mostrarObjeto(obj)}`}
+    className="item itemMuted"
+    onClick={() => onExplorerItemClick(s.key, obj)}
+    style={{
+      paddingLeft: 22,
+      border: isSelected
+        ? "1px solid rgba(59,130,246,0.7)"
+        : "1px solid rgba(255,255,255,0.06)",
+      background: isSelected
+        ? "rgba(59,130,246,0.10)"
+        : "rgba(255,255,255,0.02)",
+      cursor: "pointer",
+    }}
+    title={mostrarObjeto(obj)}
+  >
+    <span style={{ opacity: 0.7 }}>•</span>
+    <span
+      style={{
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {mostrarObjeto(obj)}
+    </span>
+  </div>
+);
+
             })
           )
         ) : null}
@@ -563,35 +570,13 @@ const onExplorerItemClick = (sectionKey, obj) => {
   onClear={clearSelectedTable}
 />
 
-{selectedObj ? (
-  <div className="panel" style={{ marginBottom: 14 }}>
-    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-      <h2 style={{ margin: 0 }}>Detalle</h2>
-      <div style={{ opacity: 0.8 }}>
-        {selectedObj.schema}.{selectedObj.name}
-      </div>
-      <div style={{ marginLeft: "auto" }}>
-        <button onClick={clearSelectedObj} style={{ padding: 10, fontWeight: 700 }}>
-          Limpiar
-        </button>
-      </div>
-    </div>
-
-    {loadingObjDef ? (
-      <div style={{ marginTop: 10, opacity: 0.8 }}>Cargando definición...</div>
-    ) : objDefError ? (
-      <div style={{ marginTop: 10, color: "tomato" }}>{objDefError}</div>
-    ) : objDef?.hasDefinition ? (
-      <pre style={{ marginTop: 10, whiteSpace: "pre-wrap" }}>
-        {objDef.definition}
-      </pre>
-    ) : (
-      <div style={{ marginTop: 10, opacity: 0.8 }}>
-        Definición no disponible (posible WITH ENCRYPTION)
-      </div>
-    )}
-  </div>
-) : null}
+ <ObjectDefinitionPanel
+  selectedObj={selectedObj}
+  loading={loadingObjDef}
+  error={objDefError}
+  objDef={objDef}
+  onClear={clearSelectedObj}
+/>
 
 
           <h1 style={{ marginTop: 0 }}>Connection Manager (MSSQL)</h1>
