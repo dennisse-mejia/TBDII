@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import "./App.css";
-import { getTableDetails } from "./api/db";
+import { getTableDetails, getObjectDefinition } from "./api/db";
 import TableDetailsPanel from "./components/TableDetailsPanel";
 
 
@@ -120,6 +120,14 @@ const [tableDetails, setTableDetails] = useState(null);
 const [loadingTableDetails, setLoadingTableDetails] = useState(false);
 const [tableDetailsError, setTableDetailsError] = useState("");
 
+// detalle objeto (DDL vistas/procs/funcs/triggers)
+// schema, name, kind
+const [selectedObj, setSelectedObj] = useState(null); 
+const [objDef, setObjDef] = useState(null);
+const [loadingObjDef, setLoadingObjDef] = useState(false);
+const [objDefError, setObjDefError] = useState("");
+
+
 
   // Mapea opciones del dropdown
   const connectionOptions = useMemo(() => {
@@ -214,6 +222,47 @@ useEffect(() => {
     setLoadingTableDetails(false);
     return;
   }
+
+  // trae definicion objeto cambia 
+useEffect(() => {
+  if (!selectedId || !selectedObj) {
+    setObjDef(null);
+    setObjDefError("");
+    setLoadingObjDef(false);
+    return;
+  }
+
+  const controller = new AbortController();
+
+  (async () => {
+    try {
+      setLoadingObjDef(true);
+      setObjDefError("");
+
+      const data = await getObjectDefinition(
+        {
+          connectionId: selectedId,
+          schema: selectedObj.schema,
+          name: selectedObj.name,
+        },
+        { signal: controller.signal }
+      );
+
+      setObjDef(data);
+    } catch (e) {
+      if (e?.name === "AbortError") return;
+      setObjDef(null);
+      setObjDefError(e?.message || "Error cargando definición");
+    } finally {
+      setLoadingObjDef(false);
+    }
+  })();
+
+  return () => controller.abort();
+}, [selectedId, selectedObj]);
+
+
+
 
   const controller = new AbortController();
 
@@ -343,12 +392,36 @@ useEffect(() => {
   setTableDetails(null);
   setTableDetailsError("");
   setLoadingTableDetails(false);
+
+  const clearSelectedObj = () => {
+  setSelectedObj(null);
+  setObjDef(null);
+  setObjDefError("");
+  setLoadingObjDef(false);
+};
+
 };
 
 const onTableClick = (obj) => {
   const { schema, name } = extraerSchemaNombre(obj);
   setSelectedTable({ schema, name });
 };
+
+const onExplorerItemClick = (sectionKey, obj) => {
+  const { schema, name } = extraerSchemaNombre(obj);
+
+  if (sectionKey === "tables") {
+    // Selecciona tabla
+    clearSelectedObj();
+    setSelectedTable({ schema, name });
+    return;
+  }
+
+  // Selecciona objeto DDL
+  clearSelectedTable(); 
+  setSelectedObj({ schema, name, kind: sectionKey });
+};
+
 
 
   return (
@@ -425,17 +498,21 @@ const onTableClick = (obj) => {
               const isTable = s.key === "tables";
               const { schema, name } = extraerSchemaNombre(obj);
 
-              const isSelected =
-                isTable &&
-                selectedTable &&
-                selectedTable.schema === schema &&
-                selectedTable.name === name;
+              const isSelected = isTable
+  ? selectedTable &&
+    selectedTable.schema === schema &&
+    selectedTable.name === name
+  : selectedObj &&
+    selectedObj.schema === schema &&
+    selectedObj.name === name &&
+    selectedObj.kind === s.key;
+
 
               return (
                 <div
                   key={`${s.key}-${idx}-${mostrarObjeto(obj)}`}
                   className="item itemMuted"
-                  onClick={() => (isTable ? onTableClick(obj) : null)}
+                  onClick={() => onExplorerItemClick(s.key, obj)}
                   style={{
                     paddingLeft: 22,
                     border: isSelected
@@ -444,7 +521,7 @@ const onTableClick = (obj) => {
                     background: isSelected
                       ? "rgba(59,130,246,0.10)"
                       : "rgba(255,255,255,0.02)",
-                    cursor: isTable ? "pointer" : "default",
+                    cursor: "pointer",
                   }}
                   title={mostrarObjeto(obj)}
                 >
@@ -485,6 +562,37 @@ const onTableClick = (obj) => {
   error={tableDetailsError}
   onClear={clearSelectedTable}
 />
+
+{selectedObj ? (
+  <div className="panel" style={{ marginBottom: 14 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <h2 style={{ margin: 0 }}>Detalle</h2>
+      <div style={{ opacity: 0.8 }}>
+        {selectedObj.schema}.{selectedObj.name}
+      </div>
+      <div style={{ marginLeft: "auto" }}>
+        <button onClick={clearSelectedObj} style={{ padding: 10, fontWeight: 700 }}>
+          Limpiar
+        </button>
+      </div>
+    </div>
+
+    {loadingObjDef ? (
+      <div style={{ marginTop: 10, opacity: 0.8 }}>Cargando definición...</div>
+    ) : objDefError ? (
+      <div style={{ marginTop: 10, color: "tomato" }}>{objDefError}</div>
+    ) : objDef?.hasDefinition ? (
+      <pre style={{ marginTop: 10, whiteSpace: "pre-wrap" }}>
+        {objDef.definition}
+      </pre>
+    ) : (
+      <div style={{ marginTop: 10, opacity: 0.8 }}>
+        Definición no disponible (posible WITH ENCRYPTION)
+      </div>
+    )}
+  </div>
+) : null}
+
 
           <h1 style={{ marginTop: 0 }}>Connection Manager (MSSQL)</h1>
 

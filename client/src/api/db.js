@@ -99,3 +99,29 @@ export async function getTableDetails(ref, options = {}) {
 
   return getJson(url, options);
 }
+
+/**
+ * @typedef {Object} ObjectRef
+ * @property {string} connectionId
+ * @property {string} schema
+ * @property {string} name
+ */
+
+/**
+ * definición SQL de objeto
+ * @param {ObjectRef} ref
+ * @param {{ signal?: AbortSignal }} [options]
+ * @returns {Promise<{ok:boolean, object:any, definition:string, hasDefinition:boolean}>}
+ */
+export async function getObjectDefinition(ref, options = {}) {
+  const { connectionId, schema, name } = ref || {};
+
+  if (!connectionId) throw new Error("Falta connectionId");
+  if (!schema) throw new Error("Falta schema");
+  if (!name) throw new Error("Falta name");
+
+  const query = buildQuery({ connectionId, schema, name });
+  const url = `${BASE_URL}/db/object/definition?${query}`;
+
+  return getJson(url, options);
+}
