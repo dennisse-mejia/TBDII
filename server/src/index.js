@@ -443,5 +443,61 @@ app.post("/db/exec", async (req, res) => {
   }
 });
 
+// query runner, ejecutar SQL
+app.post("/db/query", async (req, res) => {
+  const connectionId = String(req.body?.connectionId || "").trim();
+  const sqlText = String(req.body?.sqlText || "").trim();
+
+  if (!connectionId || !sqlText) {
+    return res
+      .status(400)
+      .json({ ok: false, error: "Falta connectionId o sqlText" });
+  }
+
+  const conns = readConnections();
+  const conn = conns.find((c) => c.id === connectionId);
+
+  if (!conn) {
+    return res.status(404).json({ ok: false, error: "Conexión no encontrada" });
+  }
+
+  const cfg = {
+    user: conn.user,
+    password: conn.password,
+    server: conn.host,
+    port: Number(conn.port || 1433),
+    database: conn.database || "master",
+    options: { encrypt: false, trustServerCertificate: true },
+  };
+
+  let pool;
+  try {
+    pool = await sql.connect(cfg);
+
+    const result = await pool.request().query(sqlText);
+
+    const recordset = result?.recordset || [];
+    const metaCols = result?.recordset?.columns
+      ? Object.keys(result.recordset.columns)
+      : [];
+
+    const columns =
+      metaCols.length > 0
+        ? metaCols
+        : recordset[0]
+        ? Object.keys(recordset[0])
+        : [];
+
+    const rows = recordset.map((r) => columns.map((c) => r?.[c]));
+
+    return res.json({ ok: true, columns, rows });
+  } catch (err) {
+    return res.status(400).json({ ok: false, error: err.message });
+  } finally {
+    try {
+      if (pool) await pool.close();
+    } catch {}
+  }
+});
 
 app.listen(PORT, () => console.log(`API on http://localhost:${PORT}`));
