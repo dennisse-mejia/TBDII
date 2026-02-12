@@ -125,3 +125,41 @@ export async function getObjectDefinition(ref, options = {}) {
 
   return getJson(url, options);
 }
+
+/**
+ * ejecutar query y devolver columns + rows
+ * @param {{connectionId: string, sqlText: string}} payload
+ * @param {{ signal?: AbortSignal }} [options]
+ * @returns {Promise<{ok:boolean, columns:string[], rows:any[][]}>}
+ */
+export async function runQuery(payload, options = {}) {
+  const connectionId = String(payload?.connectionId || "").trim();
+  const sqlText = String(payload?.sqlText || "").trim();
+
+  if (!connectionId) throw new Error("Falta connectionId");
+  if (!sqlText) throw new Error("Falta sqlText");
+
+  const res = await fetch(`${BASE_URL}/db/query`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connectionId, sqlText }),
+    signal: options.signal,
+  });
+
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {}
+
+  if (!res.ok || (data && data.ok === false)) {
+    const msg =
+      (data && data.error) ||
+      `Error ${res.status}: ${res.statusText || "Request failed"}`;
+    const err = new Error(msg);
+    err.status = res.status;
+    err.data = data;
+    throw err;
+  }
+
+  return data;
+}

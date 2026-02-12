@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import "./App.css";
-import { getTableDetails, getObjectDefinition } from "./api/db";
+import { getTableDetails, getObjectDefinition, runQuery } from "./api/db";
 import TableDetailsPanel from "./components/TableDetailsPanel";
 import ObjectDefinitionPanel from "./components/ObjectDefinitionPanel";
 
@@ -132,6 +132,16 @@ const [objDef, setObjDef] = useState(null);
 const [loadingObjDef, setLoadingObjDef] = useState(false);
 const [objDefError, setObjDefError] = useState("");
 
+// query runner
+const [sqlText, setSqlText] = useState("SELECT TOP 20 * FROM sys.objects;");
+const [queryLoading, setQueryLoading] = useState(false);
+const [queryError, setQueryError] = useState("");
+const [queryResult, setQueryResult] = useState(null);
+
+useEffect(() => {
+  setQueryResult(null);
+  setQueryError("");
+}, [selectedId]);
 
 
   // Mapea opciones del dropdown
@@ -403,6 +413,27 @@ const clearSelectedObj = () => {
   setLoadingObjDef(false);
 };
 
+const onRunQuery = async () => {
+  if (!selectedId) {
+    setQueryError("Selecciona una conexión primero");
+    return;
+  }
+
+  setQueryLoading(true);
+  setQueryError("");
+
+  try {
+    const data = await runQuery({ connectionId: selectedId, sqlText });
+    setQueryResult(data);
+  } catch (e) {
+    setQueryResult(null);
+    setQueryError(e?.message || "Error ejecutando query");
+  } finally {
+    setQueryLoading(false);
+  }
+};
+
+
 const onObjectClick = (sectionKey, obj) => {
   const { schema, name } = extraerSchemaNombre(obj);
 
@@ -577,6 +608,62 @@ const onExplorerItemClick = (sectionKey, obj) => {
   objDef={objDef}
   onClear={clearSelectedObj}
 />
+
+<div style={{ marginBottom: 18 }}>
+  <h2 style={{ margin: 0 }}>Query Runner</h2>
+
+  <textarea
+    className="control"
+    value={sqlText}
+    onChange={(e) => setSqlText(e.target.value)}
+    rows={6}
+    placeholder="Escribe tu SQL aquí..."
+    style={{
+      width: "100%",
+      fontFamily:
+        "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+    }}
+  />
+
+  <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+    <button
+      onClick={onRunQuery}
+      disabled={!selectedId || queryLoading}
+      style={{ padding: 12, fontWeight: 800 }}
+      title={!selectedId ? "Selecciona una conexión" : "Ejecutar"}
+    >
+      {queryLoading ? "Running..." : "Run"}
+    </button>
+
+    {queryResult?.rows ? (
+      <div style={{ alignSelf: "center", opacity: 0.8 }}>
+        Filas: <b>{queryResult.rows.length}</b>
+      </div>
+    ) : null}
+  </div>
+
+  {queryError ? (
+    <div style={{ marginTop: 10, color: "tomato", fontWeight: 700 }}>
+      {queryError}
+    </div>
+  ) : null}
+
+  {queryResult ? (
+    <pre
+      style={{
+        marginTop: 10,
+        padding: 12,
+        borderRadius: 10,
+        background: "rgba(255,255,255,0.03)",
+        overflow: "auto",
+      }}
+    >
+      {JSON.stringify(queryResult, null, 2)}
+    </pre>
+  ) : null}
+
+  <hr style={{ margin: "18px 0", opacity: 0.25 }} />
+</div>
 
 
           <h1 style={{ marginTop: 0 }}>Connection Manager (MSSQL)</h1>
