@@ -15,6 +15,105 @@ const SECCIONES = [
   { key: "triggers", label: "Triggers" },
 ];
 
+const formatCell = (v) => {
+  if (v === null || v === undefined) return "NULL";
+  if (typeof v === "boolean") return v ? "true" : "false";
+  if (typeof v === "number") return String(v);
+  if (typeof v === "string") return v;
+
+  try {
+    return JSON.stringify(v);
+  } catch {
+    return String(v);
+  }
+};
+
+function QueryResultsTable({ result }) {
+  const columns = result?.columns || [];
+  const rows = result?.rows || [];
+
+  if (!result) return null;
+
+  if (rows.length === 0) {
+    return <div style={{ marginTop: 10, opacity: 0.7 }}>— sin resultados —</div>;
+  }
+
+  return (
+    <div
+      style={{
+        marginTop: 10,
+        borderRadius: 12,
+        border: "1px solid rgba(255,255,255,0.12)",
+        overflow: "hidden",
+      }}
+    >
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr>
+              {columns.map((c) => (
+                <th
+                  key={c}
+                  style={{
+                    textAlign: "left",
+                    padding: "10px 12px",
+                    fontSize: 13,
+                    background: "rgba(255,255,255,0.05)",
+                    borderBottom: "1px solid rgba(255,255,255,0.12)",
+                    whiteSpace: "nowrap",
+                    position: "sticky",
+                    top: 0,
+                  }}
+                >
+                  {c}
+                </th>
+              ))}
+            </tr>
+          </thead>
+
+          <tbody>
+            {rows.map((r, idx) => (
+              <tr
+                key={idx}
+                style={{
+                  background:
+                    idx % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)",
+                }}
+              >
+                {columns.map((c, j) => {
+                  const val = r?.[j];
+                  const text = formatCell(val);
+
+                  return (
+                    <td
+                      key={`${idx}-${c}-${j}`}
+                      title={text}
+                      style={{
+                        padding: "9px 12px",
+                        borderBottom: "1px solid rgba(255,255,255,0.06)",
+                        whiteSpace: "nowrap",
+                        maxWidth: 420,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        fontFamily:
+                          "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                        fontSize: 12,
+                        opacity: val === null ? 0.6 : 1,
+                      }}
+                    >
+                      {text}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // normaliza forma del backend
 function normalizarObjetos(payload) {
   const p = payload ?? {};
@@ -648,19 +747,7 @@ const onExplorerItemClick = (sectionKey, obj) => {
     </div>
   ) : null}
 
-  {queryResult ? (
-    <pre
-      style={{
-        marginTop: 10,
-        padding: 12,
-        borderRadius: 10,
-        background: "rgba(255,255,255,0.03)",
-        overflow: "auto",
-      }}
-    >
-      {JSON.stringify(queryResult, null, 2)}
-    </pre>
-  ) : null}
+  {queryResult ? <QueryResultsTable result={queryResult} /> : null}
 
   <hr style={{ margin: "18px 0", opacity: 0.25 }} />
 </div>
