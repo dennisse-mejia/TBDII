@@ -408,6 +408,106 @@ app.get("/db/table/details", async (req, res) => {
   }
 });
 
+// indices por tabla
+app.get("/db/indexes", async (req, res) => {
+  const connectionId = String(req.query.connectionId || "").trim();
+  const schema = String(req.query.schema || "").trim();
+  const table = String(req.query.table || "").trim();
+
+  if (!connectionId) {
+    return res.status(400).json({ ok: false, error: "Falta connectionId" });
+  }
+  if (!schema || !table) {
+    return res.status(400).json({ ok: false, error: "Falta schema o table" });
+  }
+
+  const conns = readConnections();
+  const conn = conns.find((c) => c.id === connectionId);
+
+  if (!conn) {
+    return res.status(404).json({ ok: false, error: "Conexión no encontrada" });
+  }
+
+  const cfg = {
+    user: conn.user,
+    password: conn.password,
+    server: conn.host,
+    port: Number(conn.port || 1433),
+    database: conn.database || "master",
+    options: { encrypt: false, trustServerCertificate: true },
+  };
+
+  let pool;
+  try {
+    pool = await sql.connect(cfg);
+
+    // validar tabla y obtener object_id
+    const objQ = await pool
+      .request()
+      .input("schema", sql.NVarChar, schema)
+      .input("name", sql.NVarChar, table)
+      .query(`
+        SELECT t.object_id
+        FROM sys.tables t
+        INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
+        WHERE t.is_ms_shipped = 0
+          AND s.name = @schema
+          AND t.name = @name;
+      `);
+
+    const objId = objQ.recordset?.[0]?.object_id;
+    if (!objId) {
+      return res.status(404).json({ ok: false, error: "Tabla no encontrada" });
+    }
+
+    const idxQ = await pool
+      .request()
+      .input("objId", sql.Int, objId)
+      .query(`
+        SELECT
+          i.name AS index_name,
+          i.index_id,
+          i.type_desc,
+          i.is_unique,
+          i.is_primary_key,
+          i.is_unique_constraint,
+          i.has_filter,
+          i.filter_definition,
+          ic.key_ordinal,
+          ic.is_included_column,
+          ic.is_descending_key,
+          c.name AS column_name
+        FROM sys.indexes i
+        INNER JOIN sys.index_columns ic
+          ON ic.object_id = i.object_id
+         AND ic.index_id = i.index_id
+        INNER JOIN sys.columns c
+          ON c.object_id = ic.object_id
+         AND c.column_id = ic.column_id
+        WHERE i.object_id = @objId
+          AND i.is_hypothetical = 0
+          AND i.index_id > 0
+        ORDER BY
+          i.name,
+          ic.is_included_column,
+          ic.key_ordinal,
+          c.column_id;
+      `);
+
+    return res.json({
+      ok: true,
+      table: { schema, name: table },
+      indexes: idxQ.recordset,
+    });
+  } catch (err) {
+    return res.status(400).json({ ok: false, error: err.message });
+  } finally {
+    try {
+      if (pool) await pool.close();
+    } catch {}
+  }
+});
+
 
 // Ejecutar SQL 
 app.post("/db/exec", async (req, res) => {
