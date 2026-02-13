@@ -22,13 +22,107 @@ function Badge({ children, title }) {
   );
 }
 
+function IndexesList({ rows }) {
+  // agrupa filas en un indice
+  const map = new Map();
+
+  for (const r of rows) {
+    const name = r.index_name || "(sin nombre)";
+    if (!map.has(name)) {
+      map.set(name, {
+        name,
+        type: r.type_desc,
+        isUnique: bool(r.is_unique),
+        isPk: bool(r.is_primary_key),
+        isUq: bool(r.is_unique_constraint),
+        hasFilter: bool(r.has_filter),
+        filter: r.filter_definition || null,
+        keys: [],
+        included: [],
+      });
+    }
+
+    const it = map.get(name);
+
+    if (bool(r.is_included_column)) {
+      it.included.push(r.column_name);
+    } else {
+      it.keys.push({
+        col: r.column_name,
+        ord: r.key_ordinal ?? 0,
+        desc: bool(r.is_descending_key),
+      });
+    }
+  }
+
+  const list = Array.from(map.values()).map((it) => ({
+    ...it,
+    keys: it.keys.sort((a, b) => a.ord - b.ord),
+    included: Array.from(new Set(it.included)),
+  }));
+
+  return (
+    <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
+      {list.map((idx) => (
+        <div
+          key={idx.name}
+          style={{
+            border: "1px solid rgba(255,255,255,0.10)",
+            borderRadius: 12,
+            padding: 10,
+            background: "rgba(255,255,255,0.02)",
+            display: "grid",
+            gap: 6,
+          }}
+        >
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <span style={{ fontWeight: 900 }}>{idx.name}</span>
+            <span style={{ opacity: 0.7 }}>{idx.type}</span>
+
+            <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+              {idx.isPk ? <Badge title="Primary Key">PK</Badge> : null}
+              {idx.isUnique ? <Badge title="Unique">UNIQUE</Badge> : null}
+              {idx.isUq ? <Badge title="Unique Constraint">UQ</Badge> : null}
+              {idx.hasFilter ? <Badge title="Filtered index">FILTER</Badge> : null}
+            </span>
+          </div>
+
+          <div style={{ opacity: 0.9 }}>
+            <b>Keys:</b>{" "}
+            {idx.keys
+              .map((k) => `${k.col} ${k.desc ? "DESC" : "ASC"}`)
+              .join(", ")}
+          </div>
+
+          {idx.included.length ? (
+            <div style={{ opacity: 0.85 }}>
+              <b>Included:</b> {idx.included.join(", ")}
+            </div>
+          ) : null}
+
+          {idx.filter ? (
+            <div style={{ opacity: 0.85 }}>
+              <b>Filter:</b> {idx.filter}
+            </div>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+
 export default function TableDetailsPanel({
   selected,
   details,
   loading,
   error,
+  indexes,
+  loadingIndexes,
+  indexesError,
   onClear,
 }) {
+
   return (
     <section
       style={{
@@ -148,6 +242,34 @@ export default function TableDetailsPanel({
               </tbody>
             </table>
           </div>
+
+                    {/* indices */}
+          <div style={{ marginTop: 6 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <h3 style={{ margin: 0 }}>Indexes</h3>
+
+              {loadingIndexes ? (
+                <span style={{ opacity: 0.7 }}>cargando…</span>
+              ) : (
+                <span style={{ opacity: 0.7 }}>{(indexes ?? []).length}</span>
+              )}
+            </div>
+
+            {indexesError ? (
+              <p style={{ marginTop: 10, color: "tomato", fontWeight: 800 }}>
+                {indexesError}
+              </p>
+            ) : loadingIndexes ? (
+              <p style={{ marginTop: 10, opacity: 0.8 }}>Cargando índices...</p>
+            ) : (indexes ?? []).length === 0 ? (
+              <p style={{ marginTop: 10, opacity: 0.7 }}>— sin índices —</p>
+            ) : (
+              <pre style={{ marginTop: 10, whiteSpace: "pre-wrap", opacity: 0.9 }}>
+                {JSON.stringify(indexes, null, 2)}
+              </pre>
+            )}
+          </div>
+
         </div>
       )}
     </section>

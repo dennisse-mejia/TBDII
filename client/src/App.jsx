@@ -224,6 +224,12 @@ const [tableDetails, setTableDetails] = useState(null);
 const [loadingTableDetails, setLoadingTableDetails] = useState(false);
 const [tableDetailsError, setTableDetailsError] = useState("");
 
+// indices de la tabla
+const [tableIndexes, setTableIndexes] = useState([]);
+const [loadingTableIndexes, setLoadingTableIndexes] = useState(false);
+const [tableIndexesError, setTableIndexesError] = useState("");
+
+
 // detalle objeto (DDL vistas/procs/funcs/triggers)
 // schema, name, kind
 const [selectedObj, setSelectedObj] = useState(null); 
@@ -240,6 +246,11 @@ const [queryResult, setQueryResult] = useState(null);
 useEffect(() => {
   setQueryResult(null);
   setQueryError("");
+}, [selectedId]);
+
+useEffect(() => {
+  setTableIndexes([]);
+  setTableIndexesError("");
 }, [selectedId]);
 
 
@@ -365,6 +376,49 @@ useEffect(() => {
 
   return () => controller.abort();
 }, [selectedId, selectedTable]);
+
+// trae indices cuando cambia tabla
+useEffect(() => {
+  if (!selectedId || !selectedTable) {
+    setTableIndexes([]);
+    setTableIndexesError("");
+    setLoadingTableIndexes(false);
+    return;
+  }
+
+  const controller = new AbortController();
+
+  (async () => {
+    try {
+      setLoadingTableIndexes(true);
+      setTableIndexesError("");
+
+      const url = `${API}/db/indexes?connectionId=${encodeURIComponent(
+        selectedId
+      )}&schema=${encodeURIComponent(selectedTable.schema)}&table=${encodeURIComponent(
+        selectedTable.name
+      )}`;
+
+      const res = await fetch(url, { signal: controller.signal });
+      const data = await res.json();
+
+      if (!res.ok || !data.ok) {
+        throw new Error(data?.error || "Error cargando índices");
+      }
+
+      setTableIndexes(data.indexes || []);
+    } catch (e) {
+      if (e?.name === "AbortError") return;
+      setTableIndexes([]);
+      setTableIndexesError(e?.message || "Error cargando índices");
+    } finally {
+      setLoadingTableIndexes(false);
+    }
+  })();
+
+  return () => controller.abort();
+}, [selectedId, selectedTable]);
+
 
 useEffect(() => {
   if (!selectedId || !selectedObj) {
@@ -503,6 +557,11 @@ useEffect(() => {
   setTableDetails(null);
   setTableDetailsError("");
   setLoadingTableDetails(false);
+
+  setTableIndexes([]);
+  setTableIndexesError("");
+  setLoadingTableIndexes(false);
+
 };
 
 const clearSelectedObj = () => {
@@ -697,8 +756,12 @@ const onExplorerItemClick = (sectionKey, obj) => {
   details={tableDetails}
   loading={loadingTableDetails}
   error={tableDetailsError}
+  indexes={tableIndexes}
+  loadingIndexes={loadingTableIndexes}
+  indexesError={tableIndexesError}
   onClear={clearSelectedTable}
 />
+
 
  <ObjectDefinitionPanel
   selectedObj={selectedObj}
