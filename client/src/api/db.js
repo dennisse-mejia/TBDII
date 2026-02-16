@@ -163,3 +163,14 @@ export async function runQuery(payload, options = {}) {
 
   return data;
 }
+
+export async function getTriggerDetail(ref, options = {}) {
+  const { connectionId, schema, name } = ref || {};
+
+  if (!connectionId) throw new Error("Falta connectionId");
+  if (!schema) throw new Error("Falta schema");
+  if (!name) throw new Error("Falta name");
+
+  const query = buildQuery({ connectionId, schema, name });
+  return getJson(`${BASE_URL}/db/triggers/detail?${query}`, options);
+}

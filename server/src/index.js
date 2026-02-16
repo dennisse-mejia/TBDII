@@ -260,6 +260,88 @@ app.get("/db/object/definition", async (req, res) => {
   }
 });
 
+// detalle de trigger 
+app.get("/db/triggers/detail", async (req, res) => {
+  const connectionId = String(req.query.connectionId || "").trim();
+  // schema del parent (tabla)
+  const schema = String(req.query.schema || "").trim(); 
+  const name = String(req.query.name || "").trim();     
+
+  if (!connectionId) {
+    return res.status(400).json({ ok: false, error: "Falta connectionId" });
+  }
+  if (!schema || !name) {
+    return res.status(400).json({ ok: false, error: "Falta schema o name" });
+  }
+
+  const conns = readConnections();
+  const conn = conns.find((c) => c.id === connectionId);
+  if (!conn) {
+    return res.status(404).json({ ok: false, error: "Conexión no encontrada" });
+  }
+
+  const cfg = {
+    user: conn.user,
+    password: conn.password,
+    server: conn.host,
+    port: Number(conn.port || 1433),
+    database: conn.database || "master",
+    options: { encrypt: false, trustServerCertificate: true },
+  };
+
+  let pool;
+  try {
+    pool = await sql.connect(cfg);
+
+    const q = await pool
+      .request()
+      .input("schema", sql.NVarChar, schema)
+      .input("name", sql.NVarChar, name)
+      .query(`
+        SELECT
+          tr.name AS trigger_name,
+          s.name  AS schema_name,
+          o.name  AS parent_name,
+          m.definition
+        FROM sys.triggers tr
+        INNER JOIN sys.objects o
+          ON o.object_id = tr.parent_id
+        INNER JOIN sys.schemas s
+          ON s.schema_id = o.schema_id
+        LEFT JOIN sys.sql_modules m
+          ON m.object_id = tr.object_id
+        WHERE tr.is_ms_shipped = 0
+          AND s.name = @schema
+          AND tr.name = @name
+        ORDER BY tr.name;
+      `);
+
+    const row = q.recordset?.[0];
+    if (!row) {
+      return res.status(404).json({ ok: false, error: "Trigger no encontrado" });
+    }
+
+    return res.json({
+      ok: true,
+      object: {
+        schema: row.schema_name,
+        name: row.trigger_name,
+        type: "TR",
+        typeDesc: "SQL_TRIGGER",
+        parent: row.parent_name,
+      },
+      definition: row.definition ?? "",
+      hasDefinition: row.definition != null,
+    });
+  } catch (err) {
+    return res.status(400).json({ ok: false, error: err.message });
+  } finally {
+    try {
+      if (pool) await pool.close();
+    } catch {}
+  }
+});
+
 
 // Detalle de tabla
 app.get("/db/table/details", async (req, res) => {

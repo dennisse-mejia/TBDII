@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import "./App.css";
-import { getTableDetails, getObjectDefinition, runQuery } from "./api/db";
+import { getTableDetails, getObjectDefinition, getTriggerDetail, runQuery } from "./api/db";
 import TableDetailsPanel from "./components/TableDetailsPanel";
 import ObjectDefinitionPanel from "./components/ObjectDefinitionPanel";
 
@@ -435,7 +435,10 @@ useEffect(() => {
       setLoadingObjDef(true);
       setObjDefError("");
 
-      const data = await getObjectDefinition(
+      const fetcher =
+        selectedObj.kind === "triggers" ? getTriggerDetail : getObjectDefinition;
+
+      const data = await fetcher(
         {
           connectionId: selectedId,
           schema: selectedObj.schema,
@@ -456,6 +459,7 @@ useEffect(() => {
 
   return () => controller.abort();
 }, [selectedId, selectedObj]);
+
 
 
 
